@@ -1281,6 +1281,8 @@ const NamedDecl* GetInstantiatedFromDecl(const NamedDecl* decl) {
 }
 
 const NamedDecl* GetDefinitionAsWritten(const NamedDecl* decl) {
+  if (!decl)
+    return nullptr;
   // First, get to decl-as-written.
   if (const auto* func_decl = dyn_cast<FunctionDecl>(decl)) {
     // If we're instantiated from a template, use the template pattern as the
@@ -1892,6 +1894,8 @@ TemplateInstantiationData GetTplInstDataForClassNoComponentTypes(
   if (!tpl_spec_type)
     return TemplateInstantiationData{};
   const NamedDecl* decl = TypeToDeclAsWritten(tpl_spec_type);
+  if (!decl)
+    return TemplateInstantiationData{};
   const auto* cls_tpl_decl = dyn_cast<ClassTemplateSpecializationDecl>(decl);
   return GetTplInstDataForClassNoComponentTypes(
       tpl_spec_type->template_arguments(), cls_tpl_decl, provided_getter);

@@ -4799,16 +4799,26 @@ class IwyuAstConsumer
 
     // We have to calculate the .h files before the .cc file, since
     // the .cc file inherits #includes from the .h files, and we
-    // need to figure out what those #includes are going to be.
+    // need to figure out what those #includes are going to be.  Likewise,
+    // a header inherits from its own associated headers.
     size_t num_edits = 0;
     OptionalFileEntryRef const main_file = preprocessor_info().main_file();
-    for (OptionalFileEntryRef file : *files_to_report_iwyu_violations_for) {
-      if (file == main_file)
-        continue;
-      CHECK_(preprocessor_info().FileInfoFor(file));
-      num_edits += preprocessor_info().FileInfoFor(file)
-          ->CalculateAndReportIwyuViolations();
-    }
+    set<OptionalFileEntryRef> calculated_files;
+    std::function<void(OptionalFileEntryRef)> calculate =
+        [&](OptionalFileEntryRef file) {
+          if (file == main_file || !calculated_files.insert(file).second)
+            return;
+          IwyuFileInfo* file_info = preprocessor_info().FileInfoFor(file);
+          CHECK_(file_info);
+          for (OptionalFileEntryRef associated :
+               file_info->AssociatedFileEntries()) {
+            if (ContainsKey(*files_to_report_iwyu_violations_for, associated))
+              calculate(associated);
+          }
+          num_edits += file_info->CalculateAndReportIwyuViolations();
+        };
+    for (OptionalFileEntryRef file : *files_to_report_iwyu_violations_for)
+      calculate(file);
     CHECK_(preprocessor_info().FileInfoFor(main_file));
     num_edits += preprocessor_info().FileInfoFor(main_file)
         ->CalculateAndReportIwyuViolations();
@@ -5382,6 +5392,10 @@ class IwyuAstConsumer
     if (CanIgnoreCurrentASTNode())
       return true;
 
+    const TemplateDecl* tpl = type->getTemplateName().getAsTemplateDecl();
+    if (!tpl)  // This occurs when the template name is dependent.
+      return true;
+
     bool can_fwd_decl = CanForwardDeclareType(current_ast_node());
     // If we're not in a forward-declare context, use of a template
     // specialization requires having the full type information.
@@ -5392,7 +5406,6 @@ class IwyuAstConsumer
     }
 
     if (!InImplicitCode(current_ast_node())) {
-      const TemplateDecl* tpl = type->getTemplateName().getAsTemplateDecl();
       size_t num_written_args = type->template_arguments().size();
       if (num_written_args < GetTplParamNumberWithoutPack(tpl)) {
         // If the type as-written makes use of default arguments, select exactly
